@@ -22,6 +22,124 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 {
+    int i, j, ii, jj;
+
+    if (M == 32 && N == 32) {
+        int block = 8;
+        for (i = 0; i < N; i += block) {
+            for (j = 0; j < M; j += block) {
+                int diag = -1, tmp = 0;
+                for (ii = i; ii < i + block; ++ii) {
+                    for (jj = j; jj < j + block; ++jj) {
+                        if (ii == jj) {
+                            tmp = A[ii][jj];
+                            diag = ii;
+                        } else {
+                            B[jj][ii] = A[ii][jj];
+                        }
+                    }
+                    if (diag != -1) {
+                        B[diag][diag] = tmp;
+                        diag = -1;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    if (M == 64 && N == 64) {
+        for (i = 0; i < 64; i += 8) {
+            for (j = 0; j < 64; j += 8) {
+                int a0, a1, a2, a3, a4, a5, a6, a7;
+
+                /* Step 1: copy upper 4x8 part; stash right half in B's upper-right area */
+                for (ii = i; ii < i + 4; ++ii) {
+                    a0 = A[ii][j + 0];
+                    a1 = A[ii][j + 1];
+                    a2 = A[ii][j + 2];
+                    a3 = A[ii][j + 3];
+                    a4 = A[ii][j + 4];
+                    a5 = A[ii][j + 5];
+                    a6 = A[ii][j + 6];
+                    a7 = A[ii][j + 7];
+
+                    B[j + 0][ii] = a0;
+                    B[j + 1][ii] = a1;
+                    B[j + 2][ii] = a2;
+                    B[j + 3][ii] = a3;
+
+                    B[j + 0][ii + 4] = a4;
+                    B[j + 1][ii + 4] = a5;
+                    B[j + 2][ii + 4] = a6;
+                    B[j + 3][ii + 4] = a7;
+                }
+
+                /* Step 2: swap stashed data into its final spot while bringing in lower-left 4x4 */
+                for (jj = j; jj < j + 4; ++jj) {
+                    a0 = B[jj][i + 4];
+                    a1 = B[jj][i + 5];
+                    a2 = B[jj][i + 6];
+                    a3 = B[jj][i + 7];
+
+                    a4 = A[i + 4][jj];
+                    a5 = A[i + 5][jj];
+                    a6 = A[i + 6][jj];
+                    a7 = A[i + 7][jj];
+
+                    B[jj][i + 4] = a4;
+                    B[jj][i + 5] = a5;
+                    B[jj][i + 6] = a6;
+                    B[jj][i + 7] = a7;
+
+                    B[jj + 4][i + 0] = a0;
+                    B[jj + 4][i + 1] = a1;
+                    B[jj + 4][i + 2] = a2;
+                    B[jj + 4][i + 3] = a3;
+                }
+
+                /* Step 3: copy lower-right 4x4 */
+                for (ii = i + 4; ii < i + 8; ++ii) {
+                    a0 = A[ii][j + 4];
+                    a1 = A[ii][j + 5];
+                    a2 = A[ii][j + 6];
+                    a3 = A[ii][j + 7];
+
+                    B[j + 4][ii] = a0;
+                    B[j + 5][ii] = a1;
+                    B[j + 6][ii] = a2;
+                    B[j + 7][ii] = a3;
+                }
+            }
+        }
+        return;
+    }
+
+    /* fallback for non-square or other sizes */
+    int block = 16;
+    for (i = 0; i < N; i += block) {
+        for (j = 0; j < M; j += block) {
+            int i_max = (i + block > N) ? N : i + block;
+            int j_max = (j + block > M) ? M : j + block;
+            int diag = -1, tmp = 0;
+            for (ii = i; ii < i_max; ++ii) {
+                for (jj = j; jj < j_max; ++jj) {
+                    if (ii == jj) {
+                        tmp = A[ii][jj];
+                        diag = ii;
+                    } else {
+                        B[jj][ii] = A[ii][jj];
+                    }
+                }
+                if (diag != -1) {
+                    B[diag][diag] = tmp;
+                    diag = -1;
+                }
+            }
+        }
+    }
+    return;
+
 }
 
 /* 
